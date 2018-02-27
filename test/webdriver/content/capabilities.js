@@ -18,7 +18,7 @@ require('chromedriver');
 require('geckodriver');
 
 var browserstackCapabilities = {
-  'build' : '1.0.5',
+  'build' : '1.1.0',
   'project' : 'videojs_ima',
   'browserstack.local' : 'true',
   'browserstack.localIdentifier' : process.env.BROWSERSTACK_LOCAL_IDENTIFIER,
@@ -75,8 +75,7 @@ for (let browser of browsers) {
 }
 
 // Remove if we don't have browserstack credentials.
-if (process.env.TRAVIS_PULL_REQUEST ||
-    process.env.BROWSERSTACK_USER === undefined ||
+if (process.env.BROWSERSTACK_USER === undefined ||
     process.env.BROWSERSTACK_ACCESS_KEY === undefined) {
   browsers = browsers.filter(browser =>
     browser.server != 'http://hub-cloud.browserstack.com/wd/hub');
