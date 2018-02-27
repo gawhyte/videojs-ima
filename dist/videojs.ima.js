@@ -753,12 +753,12 @@ AdUi.prototype.onAdsPlaying = function () {
  * Takes data from the controller to update the UI.
  *
  * @param {number} currentTime Current time of the ad.
+ * @param {number} remainingTime Remaining time of the ad.
  * @param {number} duration Duration of the ad.
  * @param {number} adPosition Index of the ad in the pod.
  * @param {number} totalAds Total number of ads in the pod.
  */
-AdUi.prototype.updateAdUi = function (currentTime, duration, adPosition, totalAds) {
-  var remainingTime = duration - currentTime;
+AdUi.prototype.updateAdUi = function (currentTime, remainingTime, duration, adPosition, totalAds) {
   // Update countdown timer data
   var remainingMinutes = Math.floor(remainingTime / 60);
   var remainingSeconds = Math.floor(remainingTime % 60);
@@ -1052,7 +1052,7 @@ AdUi.prototype.setShowCountdown = function (showCountdownIn) {
 };
 
 var name = "videojs-ima";
-var version = "1.1.0";
+var version = "1.1.1";
 var license = "Apache-2.0";
 var main = "./dist/videojs.ima.js";
 var author = { "name": "Google Inc." };
@@ -1493,7 +1493,7 @@ SdkImpl.prototype.onAdPlayheadTrackerInterval = function () {
     totalAds = this.currentAd.getAdPodInfo().getTotalAds();
   }
 
-  this.controller.onAdPlayheadUpdated(currentTime, duration, adPosition, totalAds);
+  this.controller.onAdPlayheadUpdated(currentTime, remainingTime, duration, adPosition, totalAds);
 };
 
 /**
@@ -2000,12 +2000,13 @@ Controller.prototype.onAdsResumed = function () {
  * Takes data from the sdk impl and passes it to the ad UI to update the UI.
  *
  * @param {number} currentTime Current time of the ad.
+ * @param {number} remainingTime Remaining time of the ad.
  * @param {number} duration Duration of the ad.
  * @param {number} adPosition Index of the ad in the pod.
  * @param {number} totalAds Total number of ads in the pod.
  */
-Controller.prototype.onAdPlayheadUpdated = function (currentTime, duration, adPosition, totalAds) {
-  this.adUi.updateAdUi(currentTime, duration, adPosition, totalAds);
+Controller.prototype.onAdPlayheadUpdated = function (currentTime, remainingTime, duration, adPosition, totalAds) {
+  this.adUi.updateAdUi(currentTime, remainingTime, duration, adPosition, totalAds);
 };
 
 /**
