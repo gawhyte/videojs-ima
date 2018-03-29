@@ -141,7 +141,7 @@ var PlayerWrapper = function PlayerWrapper(player, adsPluginSettings, controller
 
   this.vjsPlayer.one('play', this.setUpPlayerIntervals.bind(this));
   this.boundContentEndedListener = this.localContentEndedListener.bind(this);
-  this.vjsPlayer.on('ended', this.boundContentEndedListener);
+  this.vjsPlayer.on('contentended', this.boundContentEndedListener);
   this.vjsPlayer.on('dispose', this.playerDisposedListener.bind(this));
   this.vjsPlayer.on('readyforpreroll', this.onReadyForPreroll.bind(this));
   this.vjsPlayer.ready(this.onPlayerReady.bind(this));
@@ -197,7 +197,7 @@ PlayerWrapper.prototype.checkForResize = function () {
   if (currentWidth != this.vjsPlayerDimensions.width || currentHeight != this.vjsPlayerDimensions.height) {
     this.vjsPlayerDimensions.width = currentWidth;
     this.vjsPlayerDimensions.height = currentHeight;
-    this.controller.onPlayerResize();
+    this.controller.onPlayerResize(currentWidth, currentHeight);
   }
 };
 
@@ -225,6 +225,13 @@ PlayerWrapper.prototype.localContentEndedListener = function () {
 };
 
 /**
+ * Called when it's time to play a post-roll but we don't have one to play.
+ */
+PlayerWrapper.prototype.onNoPostroll = function () {
+  this.vjsPlayer.trigger('nopostroll');
+};
+
+/**
  * Detects when the video.js player has been disposed.
  */
 PlayerWrapper.prototype.playerDisposedListener = function () {
@@ -232,7 +239,7 @@ PlayerWrapper.prototype.playerDisposedListener = function () {
   this.controller.onPlayerDisposed();
 
   this.contentComplete = true;
-  this.vjsPlayer.off('ended', this.localContentEndedListener);
+  this.vjsPlayer.off('contentended', this.boundContentEndedListener);
 
   // Bug fix: https://github.com/googleads/videojs-ima/issues/306
   if (this.vjsPlayer.ads.adTimeoutTimeout) {
@@ -368,6 +375,13 @@ PlayerWrapper.prototype.getPlayerHeight = function () {
 };
 
 /**
+ * @return {Object} The vjs player's options object.
+ */
+PlayerWrapper.prototype.getPlayerOptions = function () {
+  return this.vjsPlayer.options_;
+};
+
+/**
  * Toggle fullscreen state.
  */
 PlayerWrapper.prototype.toggleFullscreen = function () {
@@ -408,7 +422,7 @@ PlayerWrapper.prototype.onAdError = function (adErrorEvent) {
  */
 PlayerWrapper.prototype.onAdBreakStart = function (adEvent) {
   this.contentSource = this.vjsPlayer.currentSrc();
-  this.vjsPlayer.off('ended', this.boundContentEndedListener);
+  this.vjsPlayer.off('contentended', this.boundContentEndedListener);
   if (adEvent.getAd().getAdPodInfo().getPodIndex() != -1) {
     // Skip this call for post-roll ads
     this.vjsPlayer.ads.startLinearAdMode();
@@ -421,8 +435,10 @@ PlayerWrapper.prototype.onAdBreakStart = function (adEvent) {
  * Handles ad break ending.
  */
 PlayerWrapper.prototype.onAdBreakEnd = function () {
-  this.vjsPlayer.on('ended', this.boundContentEndedListener);
-  this.vjsPlayer.ads.endLinearAdMode();
+  this.vjsPlayer.on('contentended', this.boundContentEndedListener);
+  if (this.vjsPlayer.ads.inAdBreak()) {
+    this.vjsPlayer.ads.endLinearAdMode();
+  }
   this.vjsControls.show();
 };
 
@@ -501,10 +517,10 @@ PlayerWrapper.prototype.playContentFromZero = function () {
  */
 
 /**
- * Adds a listener for the 'ended' event of the video player. This should be
- * used instead of setting an 'ended' listener directly to ensure that the
- * ima can do proper cleanup of the SDK before other event listeners
- * are called.
+ * Adds a listener for the 'contentended' event of the video player. This should
+ * be used instead of setting an 'contentended' listener directly to ensure that
+ * the ima can do proper cleanup of the SDK before other event listeners are
+ * called.
  * @param {listener} listener The listener to be called when content
  *     completes.
  */
@@ -516,9 +532,11 @@ PlayerWrapper.prototype.addContentEndedListener = function (listener) {
  * Reset the player.
  */
 PlayerWrapper.prototype.reset = function () {
-  this.vjsPlayer.on('ended', this.boundContentEndedListener);
+  this.vjsPlayer.on('contentended', this.boundContentEndedListener);
   this.vjsControls.show();
-  this.vjsPlayer.ads.endLinearAdMode();
+  if (this.vjsPlayer.ads.inAdBreak()) {
+    this.vjsPlayer.ads.endLinearAdMode();
+  }
   // Reset the content time we give the SDK. Fixes an issue where requesting
   // VMAP followed by VMAP would play the second mid-rolls as pre-rolls if
   // the first playthrough of the video passed the second response's
@@ -617,7 +635,7 @@ var AdUi = function AdUi(controller) {
   /**
    * Bound event handler for onMouseMove.
    */
-  this.boundOnMouseUp = this.onMouseMove.bind(this);
+  this.boundOnMouseMove = this.onMouseMove.bind(this);
 
   /**
    * Stores data for the ad playhead tracker.
@@ -911,22 +929,6 @@ AdUi.prototype.onNonLinearAdLoad = function () {
   this.addClass(this.adContainerDiv, 'bumpable-ima-ad-container');
 };
 
-/**
- * Called when the player wrapper detects that the player has been resized.
- *
- * @param {number} width The post-resize width of the player.
- * @param {number} height The post-resize height of the player.
- */
-AdUi.prototype.onPlayerResize = function (width, height) {
-  if (this.adsManager) {
-    this.adsManagerDimensions.width = width;
-    this.adsManagerDimensions.height = height;
-    /* global google */
-    /* eslint no-undef: 'error' */
-    this.adsManager.resize(width, height, google.ima.ViewMode.NORMAL);
-  }
-};
-
 AdUi.prototype.onPlayerEnterFullscreen = function () {
   this.addClass(this.fullscreenDiv, 'ima-fullscreen');
   this.removeClass(this.fullscreenDiv, 'ima-non-fullscreen');
@@ -1052,16 +1054,16 @@ AdUi.prototype.setShowCountdown = function (showCountdownIn) {
 };
 
 var name = "videojs-ima";
-var version = "1.2.1";
+var version = "1.3.0";
 var license = "Apache-2.0";
 var main = "./dist/videojs.ima.js";
 var author = { "name": "Google Inc." };
 var engines = { "node": ">=0.8.0" };
-var scripts = { "contBuild": "watch 'npm run rollup:max' src", "predevServer": "echo \"Starting up server on localhost:8000.\"", "devServer": "forever start ./node_modules/http-server/bin/http-server -p 8000 && npm run contBuild", "postdevServer": "forever stop ./node_modules/http-server/bin/http-server", "lint": "eslint \"src/*.js\"", "rollup": "npm-run-all rollup:*", "rollup:max": "rollup -c configs/rollup.config.js", "rollup:min": "rollup -c configs/rollup.config.min.js", "pretest": "npm run rollup", "test": "npm-run-all test:*", "test:vjs5": "npm install video.js@5.19.2 --no-save && npm-run-all -p -r testServer webdriver", "test:vjs6": "npm install video.js@6 --no-save && npm-run-all -p -r testServer webdriver", "testServer": "http-server --cors -p 8000 --silent", "preversion": "node scripts/preversion.js && npm run lint && npm test", "version": "node scripts/version.js", "postversion": "node scripts/postversion.js", "webdriver": "mocha test/webdriver/*.js --no-timeouts" };
+var scripts = { "contBuild": "watch 'npm run rollup:max' src", "predevServer": "echo \"Starting up server on localhost:8000.\"", "devServer": "forever start ./node_modules/http-server/bin/http-server -p 8000 && npm run contBuild", "postdevServer": "forever stop ./node_modules/http-server/bin/http-server", "lint": "eslint \"src/*.js\"", "rollup": "npm-run-all rollup:*", "rollup:max": "rollup -c configs/rollup.config.js", "rollup:min": "rollup -c configs/rollup.config.min.js", "pretest": "npm run rollup", "start": "npm run devServer", "test": "npm-run-all test:*", "test:vjs5": "npm install video.js@5.19.2 --no-save && npm-run-all -p -r testServer webdriver", "test:vjs6": "npm install video.js@6 --no-save && npm-run-all -p -r testServer webdriver", "testServer": "http-server --cors -p 8000 --silent", "preversion": "node scripts/preversion.js && npm run lint && npm test", "version": "node scripts/version.js", "postversion": "node scripts/postversion.js", "webdriver": "mocha test/webdriver/*.js --no-timeouts" };
 var repository = { "type": "git", "url": "https://github.com/googleads/videojs-ima" };
 var files = ["CHANGELOG.md", "LICENSE", "README.md", "dist/", "src/"];
-var dependencies = { "video.js": "^5.19.2 || ^6", "videojs-contrib-ads": "^6" };
-var devDependencies = { "babel-core": "^6.26.0", "babel-preset-env": "^1.6.1", "child_process": "^1.0.2", "chromedriver": "^2.33.2", "conventional-changelog-cli": "^1.3.5", "conventional-changelog-videojs": "^3.0.0", "eslint": "^4.11.0", "eslint-config-google": "^0.9.1", "eslint-plugin-jsdoc": "^3.2.0", "forever": "^0.15.3", "geckodriver": "^1.10.0", "http-server": "^0.10.0", "mocha": "^4.0.1", "npm-run-all": "^4.1.2", "path": "^0.12.7", "rimraf": "^2.6.2", "rollup": "^0.51.8", "rollup-plugin-babel": "^3.0.3", "rollup-plugin-copy": "^0.2.3", "rollup-plugin-json": "^2.3.0", "rollup-plugin-uglify": "^2.0.1", "selenium-webdriver": "^3.6.0", "uglify-es": "^3.1.10", "watch": "^1.0.2" };
+var dependencies = { "can-autoplay": "^3.0.0", "video.js": "^5.19.2 || ^6", "videojs-contrib-ads": "^6" };
+var devDependencies = { "babel-core": "^6.26.0", "babel-preset-env": "^1.6.1", "child_process": "^1.0.2", "chromedriver": "^2.35.0", "conventional-changelog-cli": "^1.3.5", "conventional-changelog-videojs": "^3.0.0", "eslint": "^4.11.0", "eslint-config-google": "^0.9.1", "eslint-plugin-jsdoc": "^3.2.0", "forever": "^0.15.3", "geckodriver": "^1.10.0", "http-server": "^0.10.0", "mocha": "^4.0.1", "npm-run-all": "^4.1.2", "path": "^0.12.7", "rimraf": "^2.6.2", "rollup": "^0.51.8", "rollup-plugin-babel": "^3.0.3", "rollup-plugin-copy": "^0.2.3", "rollup-plugin-json": "^2.3.0", "rollup-plugin-uglify": "^2.0.1", "selenium-webdriver": "^3.6.0", "uglify-es": "^3.1.10", "watch": "^1.0.2" };
 var keywords = ["videojs", "videojs-plugin"];
 var pkg = {
 	name: name,
@@ -1243,11 +1245,11 @@ SdkImpl.prototype.initAdObjects = function () {
   }
 
   if (this.controller.getSettings().locale) {
-    this.adsLoader.getSettings().setLocale(this.controller.getSettings.locale);
+    this.adsLoader.getSettings().setLocale(this.controller.getSettings().locale);
   }
 
   if (this.controller.getSettings().numRedirects) {
-    this.adsLoader.getSettings().setNumRedirects(this.controller.getSettings.numRedirects);
+    this.adsLoader.getSettings().setNumRedirects(this.controller.getSettings().numRedirects);
   }
 
   this.adsLoader.getSettings().setPlayerType('videojs-ima');
@@ -1276,10 +1278,8 @@ SdkImpl.prototype.requestAds = function () {
   adsRequest.linearAdSlotHeight = this.controller.getPlayerHeight();
   adsRequest.nonLinearAdSlotWidth = this.controller.getSettings().nonLinearWidth || this.controller.getPlayerWidth();
   adsRequest.nonLinearAdSlotHeight = this.controller.getSettings().nonLinearHeight || this.controller.getPlayerHeight();
-
-  adsRequest.setAdWillAutoPlay(this.controller.getSettings().adWillAutoPlay);
-  var adWillPlayMuted = this.controller.getSettings().adWillPlayMuted !== undefined ? this.controller.getSettings().adWillPlayMuted : this.controller.getPlayerVolume() == 0;
-  adsRequest.setAdWillPlayMuted(adWillPlayMuted);
+  adsRequest.setAdWillAutoPlay(this.controller.adsWillAutoplay());
+  adsRequest.setAdWillPlayMuted(this.controller.adsWillPlayMuted());
 
   this.adsLoader.requestAds(adsRequest);
 };
@@ -1505,6 +1505,10 @@ SdkImpl.prototype.onContentComplete = function () {
     this.contentCompleteCalled = true;
   }
 
+  if (this.adsManager && this.adsManager.getCuePoints() && !this.adsManager.getCuePoints().includes(-1)) {
+    this.controller.onNoPostroll();
+  }
+
   if (this.allAdsCompleted) {
     this.controller.onContentAndAdsCompleted();
   }
@@ -1563,6 +1567,22 @@ SdkImpl.prototype.onPlayerVolumeChanged = function (volume) {
     this.adMuted = true;
   } else {
     this.adMuted = false;
+  }
+};
+
+/**
+ * Called when the player wrapper detects that the player has been resized.
+ *
+ * @param {number} width The post-resize width of the player.
+ * @param {number} height The post-resize height of the player.
+ */
+SdkImpl.prototype.onPlayerResize = function (width, height) {
+  if (this.adsManager) {
+    this.adsManagerDimensions.width = width;
+    this.adsManagerDimensions.height = height;
+    /* global google */
+    /* eslint no-undef: 'error' */
+    this.adsManager.resize(width, height, google.ima.ViewMode.NORMAL);
   }
 };
 
@@ -1791,8 +1811,7 @@ Controller.IMA_DEFAULTS = {
   timeout: 5000,
   prerollTimeout: 1000,
   adLabel: 'Advertisement',
-  showControlsForJSAds: true,
-  adWillPlayMuted: false
+  showControlsForJSAds: true
 };
 
 /**
@@ -1811,11 +1830,27 @@ Controller.prototype.initWithSettings = function (options) {
     return;
   }
 
+  this.warnAboutDeprecatedSettings();
+
   // Default showing countdown timer to true.
   this.showCountdown = true;
   if (this.settings.showCountdown === false) {
     this.showCountdown = false;
   }
+};
+
+/**
+ * Logs console warnings when deprecated settings are used.
+ */
+Controller.prototype.warnAboutDeprecatedSettings = function () {
+  var _this = this;
+
+  var deprecatedSettings = ['adWillAutoplay', 'adsWillAutoplay', 'adWillPlayMuted', 'adsWillPlayMuted'];
+  deprecatedSettings.forEach(function (setting) {
+    if (_this.settings[setting] !== undefined) {
+      console.warn('WARNING: videojs.ima setting ' + setting + ' is deprecated');
+    }
+  });
 };
 
 /**
@@ -2087,7 +2122,7 @@ Controller.prototype.onAdsReady = function () {
  * @param {number} height The post-resize height of the player.
  */
 Controller.prototype.onPlayerResize = function (width, height) {
-  this.adUi.onPlayerResize(width, height);
+  this.sdkImpl.onPlayerResize(width, height);
 };
 
 /**
@@ -2095,6 +2130,14 @@ Controller.prototype.onPlayerResize = function (width, height) {
  */
 Controller.prototype.onContentComplete = function () {
   this.sdkImpl.onContentComplete();
+};
+
+/**
+ * Called by the player wrapper when it's time to play a post-roll but we don't
+ * have one to play.
+ */
+Controller.prototype.onNoPostroll = function () {
+  this.playerWrapper.onNoPostroll();
 };
 
 /**
@@ -2198,10 +2241,10 @@ Controller.prototype.reset = function () {
  */
 
 /**
- * Adds a listener for the 'ended' event of the video player. This should be
- * used instead of setting an 'ended' listener directly to ensure that the
- * ima can do proper cleanup of the SDK before other event listeners
- * are called.
+ * Adds a listener for the 'contentended' event of the video player. This should
+ * be used instead of setting an 'contentended' listener directly to ensure that
+ * the ima can do proper cleanup of the SDK before other event listeners are
+ * called.
  * @param {listener} listener The listener to be called when content
  *     completes.
  */
@@ -2308,6 +2351,34 @@ Controller.prototype.resumeAd = function () {
 };
 
 /**
+ * @return {boolean} true if we expect that ads will autoplay. false otherwise.
+ */
+Controller.prototype.adsWillAutoplay = function () {
+  if (this.settings.adsWillAutoplay !== undefined) {
+    return this.settings.adsWillAutoplay;
+  } else if (this.settings.adWillAutoplay !== undefined) {
+    return this.settings.adWillAutoplay;
+  } else {
+    return !!this.playerWrapper.getPlayerOptions().autoplay;
+  }
+};
+
+/**
+ * @return {boolean} true if we expect that ads will autoplay. false otherwise.
+ */
+Controller.prototype.adsWillPlayMuted = function () {
+  if (this.settings.adsWillPlayMuted !== undefined) {
+    return this.settings.adsWillPlayMuted;
+  } else if (this.settings.adWillPlayMuted !== undefined) {
+    return this.settings.adWillPlayMuted;
+  } else if (this.playerWrapper.getPlayerOptions().muted !== undefined) {
+    return this.playerWrapper.getPlayerOptions().muted;
+  } else {
+    return this.playerWrapper.getVolume() == 0;
+  }
+};
+
+/**
  * Extends an object to include the contents of objects at parameters 2 onward.
  *
  * @param {Object} obj The object onto which the subsequent objects' parameters
@@ -2385,10 +2456,10 @@ var ImaPlugin = function ImaPlugin(player, options) {
   }.bind(this);
 
   /**
-   * Adds a listener for the 'ended' event of the video player. This should be
-   * used instead of setting an 'ended' listener directly to ensure that the
-   * ima can do proper cleanup of the SDK before other event listeners
-   * are called.
+   * Adds a listener for the 'contentended' event of the video player. This
+   * should be used instead of setting an 'contentended' listener directly to
+   * ensure that the ima can do proper cleanup of the SDK before other event
+   * listeners are called.
    * @param {listener} listener The listener to be called when content
    *     completes.
    */
