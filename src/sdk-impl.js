@@ -175,12 +175,12 @@ SdkImpl.prototype.initAdObjects = function() {
 
   if (this.controller.getSettings().locale) {
     this.adsLoader.getSettings().setLocale(
-        this.controller.getSettings.locale);
+        this.controller.getSettings().locale);
   }
 
   if (this.controller.getSettings().numRedirects) {
     this.adsLoader.getSettings().setNumRedirects(
-        this.controller.getSettings.numRedirects);
+        this.controller.getSettings().numRedirects);
   }
 
   this.adsLoader.getSettings().setPlayerType('videojs-ima');
@@ -219,13 +219,8 @@ SdkImpl.prototype.requestAds = function() {
   adsRequest.nonLinearAdSlotHeight =
       this.controller.getSettings().nonLinearHeight ||
       this.controller.getPlayerHeight();
-
-  adsRequest.setAdWillAutoPlay(this.controller.getSettings().adWillAutoPlay);
-  const adWillPlayMuted =
-      this.controller.getSettings().adWillPlayMuted !== undefined ?
-      this.controller.getSettings().adWillPlayMuted :
-      (this.controller.getPlayerVolume() == 0);
-  adsRequest.setAdWillPlayMuted(adWillPlayMuted);
+  adsRequest.setAdWillAutoPlay(this.controller.adsWillAutoplay());
+  adsRequest.setAdWillPlayMuted(this.controller.adsWillPlayMuted());
 
   this.adsLoader.requestAds(adsRequest);
 };
@@ -497,6 +492,12 @@ SdkImpl.prototype.onContentComplete = function() {
     this.contentCompleteCalled = true;
   }
 
+  if (this.adsManager &&
+      this.adsManager.getCuePoints() &&
+      !this.adsManager.getCuePoints().includes(-1)) {
+    this.controller.onNoPostroll();
+  }
+
   if (this.allAdsCompleted) {
     this.controller.onContentAndAdsCompleted();
   }
@@ -566,6 +567,23 @@ SdkImpl.prototype.onPlayerVolumeChanged = function(volume) {
     this.adMuted = true;
   } else {
     this.adMuted = false;
+  }
+};
+
+
+/**
+ * Called when the player wrapper detects that the player has been resized.
+ *
+ * @param {number} width The post-resize width of the player.
+ * @param {number} height The post-resize height of the player.
+ */
+SdkImpl.prototype.onPlayerResize = function(width, height) {
+  if (this.adsManager) {
+    this.adsManagerDimensions.width = width;
+    this.adsManagerDimensions.height = height;
+    /* global google */
+    /* eslint no-undef: 'error' */
+    this.adsManager.resize(width, height, google.ima.ViewMode.NORMAL);
   }
 };
 

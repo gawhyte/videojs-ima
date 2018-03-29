@@ -79,7 +79,6 @@ Controller.IMA_DEFAULTS = {
   prerollTimeout: 1000,
   adLabel: 'Advertisement',
   showControlsForJSAds: true,
-  adWillPlayMuted: false,
 };
 
 /**
@@ -98,11 +97,32 @@ Controller.prototype.initWithSettings = function(options) {
     return;
   }
 
+  this.warnAboutDeprecatedSettings();
+
   // Default showing countdown timer to true.
   this.showCountdown = true;
   if (this.settings.showCountdown === false) {
     this.showCountdown = false;
   }
+};
+
+
+/**
+ * Logs console warnings when deprecated settings are used.
+ */
+Controller.prototype.warnAboutDeprecatedSettings = function() {
+  const deprecatedSettings = [
+    'adWillAutoplay',
+    'adsWillAutoplay',
+    'adWillPlayMuted',
+    'adsWillPlayMuted',
+  ];
+  deprecatedSettings.forEach((setting) => {
+    if (this.settings[setting] !== undefined) {
+      console.warn(
+        'WARNING: videojs.ima setting ' + setting + ' is deprecated');
+    }
+  });
 };
 
 
@@ -406,7 +426,7 @@ Controller.prototype.onAdsReady = function() {
  * @param {number} height The post-resize height of the player.
  */
 Controller.prototype.onPlayerResize = function(width, height) {
-  this.adUi.onPlayerResize(width, height);
+  this.sdkImpl.onPlayerResize(width, height);
 };
 
 
@@ -415,6 +435,14 @@ Controller.prototype.onPlayerResize = function(width, height) {
  */
 Controller.prototype.onContentComplete = function() {
   this.sdkImpl.onContentComplete();
+};
+
+/**
+ * Called by the player wrapper when it's time to play a post-roll but we don't
+ * have one to play.
+ */
+Controller.prototype.onNoPostroll = function() {
+  this.playerWrapper.onNoPostroll();
 };
 
 /**
@@ -531,10 +559,10 @@ Controller.prototype.reset = function() {
 
 
 /**
- * Adds a listener for the 'ended' event of the video player. This should be
- * used instead of setting an 'ended' listener directly to ensure that the
- * ima can do proper cleanup of the SDK before other event listeners
- * are called.
+ * Adds a listener for the 'contentended' event of the video player. This should
+ * be used instead of setting an 'contentended' listener directly to ensure that
+ * the ima can do proper cleanup of the SDK before other event listeners are
+ * called.
  * @param {listener} listener The listener to be called when content
  *     completes.
  */
@@ -633,6 +661,7 @@ Controller.prototype.changeAdTag = function(adTag) {
   this.settings.adTagUrl = adTag;
 };
 
+
 /**
  * Pauses the ad.
  */
@@ -641,12 +670,43 @@ Controller.prototype.pauseAd = function() {
   this.sdkImpl.pauseAds();
 };
 
+
 /**
  * Resumes the ad.
  */
 Controller.prototype.resumeAd = function() {
   this.adUi.onAdsPlaying();
   this.sdkImpl.resumeAds();
+};
+
+
+/**
+ * @return {boolean} true if we expect that ads will autoplay. false otherwise.
+ */
+Controller.prototype.adsWillAutoplay = function() {
+  if (this.settings.adsWillAutoplay !== undefined) {
+    return this.settings.adsWillAutoplay;
+  } else if (this.settings.adWillAutoplay !== undefined) {
+    return this.settings.adWillAutoplay;
+  } else {
+    return !!this.playerWrapper.getPlayerOptions().autoplay;
+  }
+};
+
+
+/**
+ * @return {boolean} true if we expect that ads will autoplay. false otherwise.
+ */
+Controller.prototype.adsWillPlayMuted = function() {
+  if (this.settings.adsWillPlayMuted !== undefined) {
+    return this.settings.adsWillPlayMuted;
+  } else if (this.settings.adWillPlayMuted !== undefined) {
+    return this.settings.adWillPlayMuted;
+  } else if (this.playerWrapper.getPlayerOptions().muted !== undefined) {
+    return this.playerWrapper.getPlayerOptions().muted;
+  } else {
+    return this.playerWrapper.getVolume() == 0;
+  }
 };
 
 
