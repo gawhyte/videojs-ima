@@ -132,12 +132,7 @@ var PlayerWrapper = function PlayerWrapper(player, adsPluginSettings, controller
   /**
    * Vanilla HTML5 video player underneath the video.js player.
    */
-  this.h5Player = document.getElementById(this.controller.getSettings().id).getElementsByClassName('vjs-tech')[0];
-
-  // Detect inline options
-  if (this.h5Player.hasAttribute('autoplay')) {
-    this.controller.setSetting('adWillAutoPlay', true);
-  }
+  this.h5Player = null;
 
   this.vjsPlayer.one('play', this.setUpPlayerIntervals.bind(this));
   this.boundContentEndedListener = this.localContentEndedListener.bind(this);
@@ -266,6 +261,13 @@ PlayerWrapper.prototype.onReadyForPreroll = function () {
  * Called when the player fires its 'ready' event.
  */
 PlayerWrapper.prototype.onPlayerReady = function () {
+  this.h5Player = document.getElementById(this.controller.getSettings().id).getElementsByClassName('vjs-tech')[0];
+
+  // Detect inline options
+  if (this.h5Player.hasAttribute('autoplay')) {
+    this.controller.setSetting('adWillAutoPlay', true);
+  }
+
   // Sync ad volume with player volume.
   this.onVolumeChange();
   this.vjsPlayer.on('fullscreenchange', this.onFullscreenChange.bind(this));
@@ -785,7 +787,7 @@ AdUi.prototype.updateAdUi = function (currentTime, remainingTime, duration, adPo
   }
   var podCount = ': ';
   if (totalAds > 1) {
-    podCount = ' (' + adPosition + ' of ' + totalAds + '): ';
+    podCount = ' (' + adPosition + ' ' + this.controller.getSettings().adLabelNofN + ' ' + totalAds + '): ';
   }
   this.countdownDiv.innerHTML = this.controller.getSettings().adLabel + podCount + remainingMinutes + ':' + remainingSeconds;
 
@@ -1054,7 +1056,7 @@ AdUi.prototype.setShowCountdown = function (showCountdownIn) {
 };
 
 var name = "videojs-ima";
-var version = "1.3.0";
+var version = "1.4.0";
 var license = "Apache-2.0";
 var main = "./dist/videojs.ima.js";
 var author = { "name": "Google Inc." };
@@ -1811,6 +1813,7 @@ Controller.IMA_DEFAULTS = {
   timeout: 5000,
   prerollTimeout: 1000,
   adLabel: 'Advertisement',
+  adLabelNofN: 'of',
   showControlsForJSAds: true
 };
 
